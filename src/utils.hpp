@@ -14,12 +14,12 @@ typedef Image GrayImage;
 class DsMinist : public Dataset {
 public:
   DsMinist(const char* path_labels, const char* path_images);
-	~DsMinist();
+  ~DsMinist();
 
-	std::vector<uint8_t> labels;
-	std::vector<GrayImage> images;
+  std::vector<uint8_t> labels;
+  std::vector<GrayImage> images;
 
-	int count() const override;
+  int count() const override;
   Matrix get_input(int index) const override;
   Matrix get_output(int index) const override;
 
@@ -27,7 +27,7 @@ public:
 
 private:
   static Matrix _image_to_input(const GrayImage* image);
-	void _reserve(int size);
+  void _reserve(int size);
 };
 
 

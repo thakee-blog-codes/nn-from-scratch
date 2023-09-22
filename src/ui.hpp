@@ -17,9 +17,10 @@ public:
     IDLE,
     TRAINING,
     DRAWING,
+    TESTING,
   };
 
-	UI(NN* nn, Dataset* dset_train);
+  UI(NN* nn, DsMinist* dset_train, DsMinist* dset_test);
   
   void handle_inputs();
   void update();
@@ -45,7 +46,6 @@ public:
   // Draw a texture under the error graph, Note that the texture
   // width will be the same as graph width.
   void draw_texture();
-
   void draw_drawing_canvas();
 
 private:
@@ -56,11 +56,16 @@ private:
   void _forward_canvas();
   void _clear_canvas();
 
-  State state = State::IDLE;
-  NN* nn = nullptr;
-  Dataset* dset_train = nullptr;
-  Texture* texture = nullptr;
+  void _check_box(Rectangle area, const char* label, bool* active);
 
+  State state = State::IDLE;
+  bool training = true; // Either we're training or testing.
+
+  NN* nn = nullptr;
+  DsMinist* dset_train = nullptr;
+  DsMinist* dset_test = nullptr;
+
+  Texture* texture = nullptr;
 
   // To draw an image to test.
   RenderTexture2D canvas;
@@ -84,7 +89,7 @@ private:
   // x = layer index, y = neuron index.
   Vector2 selected_neuron = { -1, -1 };
 
-	Camera2D cam_nn;
+  Camera2D cam_nn;
 
   Rectangle area_error_graph = { 0 };
   Rectangle area_texture = { 0 };
@@ -97,11 +102,11 @@ private:
   const int font_size        = 25;
   const float btn_width      = 150.f;
   const float btn_height     = 30.f;
-	const float padding        = 15.f;
+  const float padding        = 15.f;
   const float neuron_radius  = 40.f;
   const float neuron_gap     = 100.f;
   const float layer_gap      = 400.f;
-	const float zoom_increment = 0.5f;
+  const float zoom_increment = 0.5f;
 
   Color color_nn_area     = GetColor(0x252525ff);
   Color color_selected_neuron = PURPLE;
@@ -116,8 +121,8 @@ private:
 
 #ifdef SINGLE_SOURCE_IMPL
 
-UI::UI(NN* nn, Dataset* dset_train)
-  : nn(nn), dset_train(dset_train) {
+UI::UI(NN* nn, DsMinist* dset_train, DsMinist* dset_test)
+  : nn(nn), dset_train(dset_train), dset_test(dset_test) {
 
   cam_nn = { 0 };
   update();
@@ -184,7 +189,7 @@ void UI::handle_inputs() {
 
   // Since this is an immediate mode ui, we'll mostly handle inputs when
   // we draw the components. Here we handle global events or key press.
-  if ((state == TRAINING || state == IDLE) && _nn_graph_has_mouse()) {
+  if ((state == IDLE || state == TRAINING || state == TESTING) && _nn_graph_has_mouse()) {
 
     if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
       Vector2 delta = GetMouseDelta();
@@ -340,28 +345,66 @@ void UI::draw_error_graph() {
 }
 
 
+void UI::_check_box(Rectangle area, const char* label, bool* active) {
+
+  Vector2 mouse_pos = GetMousePosition();
+  Color color_border = GRAY;
+  if (CheckCollisionPointRec(mouse_pos, area)) {
+    color_border = BLUE;
+    if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
+      *active = !(*active);
+    }
+  }
+
+  DrawRectangleLinesEx(area, 2, color_border);
+  DrawText(label, area.x + area.width + padding, area.y, font_size, { 37, 37, 37, 0xff });
+
+  const int pad = 2;
+  if (*active) {
+    area.x += pad; area.y += pad;
+    area.width -= 2 * pad; area.height -= 2 * pad;
+    DrawRectangleRec(area, BLUE);
+  }
+}
+
+
 void UI::draw_inputs() {
   DrawRectangleRec(area_input, color_pannel);
 
-  Rectangle comp_area;
-
-  { // Train / Pause btn.
-    comp_area = {
+  Rectangle comp_area = {
       area_input.x + padding,
       area_input.y + padding,
-      area_input.width - 2* padding,
+      area_input.width - 2 * padding,
       btn_height,
-    };
-    const char* btn_label = (state == State::TRAINING) ? "pause" : "train";
+  };
 
-    if ((GuiButton(comp_area, btn_label) || IsKeyReleased(KEY_SPACE)) && state != DRAWING) {
+  {
+    Rectangle area = comp_area;
+    area.width = area.height;
+    const char* label = (training) ? "training" : "testing";
+    _check_box(area, label, &training);
+  }
+
+  { // Train, Test / Pause btn.
+    comp_area.y += comp_area.height + padding;
+    const char* btn_label = (
+      (state == TRAINING || state == TESTING) ? "pause" : (
+        (training) ? "train" : "test"
+      )
+    );
+
+    if (
+      GuiButton(comp_area, btn_label) ||
+      (training && IsKeyReleased(KEY_SPACE))
+    ) {
       switch (state) {
-        case State::TRAINING:
-        state = State::IDLE;
+        case TESTING:
+        case TRAINING:
+        state = IDLE;
         break;
 
-        case State::IDLE:
-        state = State::TRAINING;
+        case IDLE:
+        state = (training) ? TRAINING : TESTING;
         break;
       }
     }
@@ -376,9 +419,22 @@ void UI::draw_inputs() {
 
   { // Iter btn.
     comp_area.y += comp_area.height + padding;
-    if ((GuiButton(comp_area, "iter") || IsKeyReleased(KEY_N)) && state == IDLE) {
-      iter = true;
-      state = TRAINING;
+    if ((GuiButton(comp_area, "iter") || IsKeyReleased(KEY_N))) {
+      switch (state) {
+        case IDLE:
+        iter = true;
+        state = (training) ? TRAINING : TESTING;
+        break;
+
+        case TRAINING:
+        case TESTING:
+        state = IDLE;
+        break;
+
+        default:
+        break;
+
+      }
     }
   }
 
@@ -411,7 +467,7 @@ void UI::draw_neuron_info() {
   if (selected_neuron.x < 0 || selected_neuron.y < 0) return;
 
   const Layer& layer = nn->layers[(int)selected_neuron.x];
-  matrix_t activation = layer.activation.at(0, (int)selected_neuron.y);
+  matrix_t activation = layer.outputs.at(0, (int)selected_neuron.y);
   matrix_t biased = layer.biased.at(0, (int)selected_neuron.y);
 
   Rectangle area = area_neuron_info;
@@ -434,7 +490,7 @@ void UI::draw_neuron_info() {
   if (selected_neuron.x > 0) {
     const Layer& prev = nn->layers[(int)(selected_neuron.x - 1)];
     for (int i = 0; i < prev.weights.rows(); i++) {
-      matrix_t a = prev.activation.at(0, i);
+      matrix_t a = prev.outputs.at(0, i);
       matrix_t w = prev.weights.at(i, (int)selected_neuron.y);
 
       pos.y += font_size + padding;
@@ -633,7 +689,7 @@ void UI::draw_nn_graph() {
 
   int max_activation_count = 0;
   for (const Layer& layer : nn->layers) {
-    max_activation_count = std::max(max_activation_count, layer.activation.cols());
+    max_activation_count = std::max(max_activation_count, layer.outputs.cols());
   }
 
   // This will be the length between first neuron and last neuron of the longest layer.
@@ -645,7 +701,7 @@ void UI::draw_nn_graph() {
 
   // Returns the position of a neuron.
   auto get_pos = [=](int layer_index, int neuron_index) {
-    int cols = nn->layers[layer_index].activation.cols();
+    int cols = nn->layers[layer_index].outputs.cols();
     float curr_layer_height = (cols - 1) * (neuron_gap + 2 * neuron_radius);
     float x = offset_x + layer_gap * layer_index;
     float y = offset_y + (max_layer_height - curr_layer_height) / 2.f;
@@ -664,12 +720,12 @@ void UI::draw_nn_graph() {
     for (int layer_index = (int)(nn->layers.size()) - 1; layer_index >= 0; layer_index--) {
       const Layer& layer = nn->layers[layer_index];
 
-      for (int neuron_index = 0; neuron_index < layer.activation.cols(); neuron_index++) {
+      for (int neuron_index = 0; neuron_index < layer.outputs.cols(); neuron_index++) {
         Vector2 pos = get_pos(layer_index, neuron_index);
         Vector2 screen_pos = GetWorldToScreen2D({ pos.x, pos.y }, cam_nn);
         if (CheckCollisionPointRec(screen_pos, area_nn)) {
           if (layer_index > 0) {
-            int prev_cols = nn->layers[layer_index - 1].activation.cols();
+            int prev_cols = nn->layers[layer_index - 1].outputs.cols();
             for (int j = 0; j < prev_cols; j++) {
               Vector2 pos_prev = get_pos(layer_index - 1, j);
 
@@ -690,15 +746,15 @@ void UI::draw_nn_graph() {
       // Get the maximum confident neuron.
       int confident_neuron_index = -1;
       matrix_t max_conf = 0.f;
-      for (int i = 0; i < layer.activation.cols(); i++) {
-        matrix_t curr = layer.activation.at(0, i);
+      for (int i = 0; i < layer.outputs.cols(); i++) {
+        matrix_t curr = layer.outputs.at(0, i);
         if (curr >= max_conf) {
           confident_neuron_index = i;
           max_conf = curr;
         }
       }
 
-      for (int neuron_index = 0; neuron_index < layer.activation.cols(); neuron_index++) {
+      for (int neuron_index = 0; neuron_index < layer.outputs.cols(); neuron_index++) {
         Vector2 pos = get_pos(layer_index, neuron_index);
         Vector2 screen_pos = GetWorldToScreen2D({ pos.x, pos.y }, cam_nn);
 
@@ -718,7 +774,7 @@ void UI::draw_nn_graph() {
 
           }
 
-          matrix_t activation = layer.activation.at(0, neuron_index);
+          matrix_t activation = layer.outputs.at(0, neuron_index);
           Color color = _interpolated_color(color_neuron_min, color_neuron_max, activation);
           if (selected_neuron.x == layer_index && selected_neuron.y == neuron_index) {
             color = color_selected_neuron;
@@ -741,7 +797,7 @@ void UI::draw_nn_graph() {
               pos.x + neuron_radius + padding,
               pos.y - 15,
               40,
-              (neuron_index == confident_neuron_index)
+              ((neuron_index == confident_neuron_index) && max_conf >= .5)
                 ? BLUE
                 : RAYWHITE
             );

@@ -4,51 +4,44 @@
 typedef float matrix_t;
 
 
-#define MAT_PRINT(matrix)     \
- do {                         \
-    printf("%s = ", #matrix); \
-    (matrix).print();         \
- } while (0)
-
-
 class Matrix {
 public:
-	Matrix(int rows=0, int cols=0, matrix_t val=0);
+  Matrix(int rows=0, int cols=0, matrix_t val=0);
 
-	Matrix& init(int rows, int cols, matrix_t val = 0);
-	Matrix& fill(matrix_t val);
+  Matrix& init(int rows, int cols, matrix_t val = 0);
+  Matrix& fill(matrix_t val);
 
-	void print() const;
+  void print() const;
 
   // Inplace operations.
-	Matrix& operator+=(const Matrix& other);
-	Matrix& operator*=(matrix_t value); // Dot product.
+  Matrix& operator+=(const Matrix& other);
+  Matrix& operator*=(matrix_t value); // Dot product.
   Matrix& multiply_inplace(const Matrix& other); // Element by element.
 
   // Operators that'll return new matrix.
-	Matrix operator-(const Matrix& other) const;
-	Matrix operator*(const Matrix& other) const;
-	Matrix operator*(matrix_t value) const;
+  Matrix operator-(const Matrix& other) const;
+  Matrix operator*(const Matrix& other) const;
+  Matrix operator*(matrix_t value) const;
   Matrix transpose() const;
   Matrix multiply(const Matrix& other) const;
 
-	matrix_t at(int row, int col) const;
-	void set(int row, int col, matrix_t value);
+  matrix_t at(int row, int col) const;
+  void set(int row, int col, matrix_t value);
 
-	matrix_t sum() const;
-	Matrix& randomize(matrix_t min = 0, matrix_t max = 1);
-	Matrix& sigmoid();
-	Matrix& square();
+  matrix_t sum() const;
+  Matrix& randomize(matrix_t min = 0, matrix_t max = 1);
+  Matrix& sigmoid();
+  Matrix& square();
 
   std::vector<matrix_t>& data();
   const std::vector<matrix_t>& data() const;
 
-	int rows() const;
-	int cols() const;
+  int rows() const;
+  int cols() const;
 
 private:
-	int _rows, _cols;
-	std::vector<matrix_t> _data;
+  int _rows, _cols;
+  std::vector<matrix_t> _data;
 };
 
 

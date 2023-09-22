@@ -17,7 +17,7 @@ public:
 
 
 struct Layer {
-  Matrix activation;
+  Matrix outputs;
   Matrix biased;
   Matrix weights;
 
@@ -45,8 +45,8 @@ struct NN {
 
   Matrix& get_outputs();
 
-  void forward(Matrix& input);
-  void backprop(Matrix expected);
+  void forward(const Matrix& input);
+  void backprop(const Matrix& expected);
 
   void save(const char* path) const;
   void load(const char* path);
@@ -65,30 +65,30 @@ float error(Matrix& out, Matrix& exp) {
 
 
 Layer::Layer(int neuron_count) {
-  activation.init(1, neuron_count);
+  outputs.init(1, neuron_count);
   biased.init(1, neuron_count);
 }
 
 
 Layer Layer::next_layer(int neuron_count) {
   Layer next;
-  next.activation.init(1, neuron_count);
+  next.outputs.init(1, neuron_count);
   next.biased.init(1, neuron_count);
-  this->weights.init(this->activation.cols(), next.activation.cols());
+  this->weights.init(this->outputs.cols(), next.outputs.cols());
   return next;
 }
 
 
 Layer::Layer(Layer&& other) noexcept :
-  activation(std::move(other.activation)),
+  outputs(std::move(other.outputs)),
   biased(std::move(other.biased)),
   weights(std::move(other.weights))
 {}
 
 
 void Layer::forward(Layer& curr, Layer& prev) {
-  curr.activation = (
-    (prev.activation * prev.weights) += curr.biased
+  curr.outputs = (
+    (prev.outputs * prev.weights) += curr.biased
   ).sigmoid();
 }
 
@@ -119,12 +119,12 @@ NN::NN(const std::vector<int>& config, const std::vector<std::string>& output_la
 
 
 Matrix& NN::get_outputs() {
-  return layers[layers.size() - 1].activation;
+  return layers[layers.size() - 1].outputs;
 }
 
 
-void NN::forward(Matrix& input) {
-  layers[0].activation = input;
+void NN::forward(const Matrix& input) {
+  layers[0].outputs = input;
   for (size_t i = 1; i < layers.size(); i++) {
     Layer& curr = layers[i];
     Layer& prev = layers[i - 1];
@@ -133,8 +133,8 @@ void NN::forward(Matrix& input) {
 }
 
 
-void NN::backprop(Matrix expected) {
-  Matrix& output = layers[layers.size() - 1].activation;
+void NN::backprop(const Matrix& expected) {
+  Matrix& output = layers[layers.size() - 1].outputs;
   assert(expected.rows() == output.rows() &&
          expected.cols() == output.cols());
 
@@ -150,11 +150,11 @@ void NN::backprop(Matrix expected) {
     Layer& prev = layers[i - 1];
 
     curr.biased += (delta * (-learn_rate));
-    prev.weights += (prev.activation.transpose() * delta) * (-learn_rate);
+    prev.weights += (prev.outputs.transpose() * delta) * (-learn_rate);
 
     // sigmoid_derivative = (a * (1 - a));
-    Matrix one = Matrix(prev.activation.rows(), prev.activation.cols(), 1);
-    Matrix sigmoid_derivative = prev.activation.multiply(one - prev.activation);
+    Matrix one = Matrix(prev.outputs.rows(), prev.outputs.cols(), 1);
+    Matrix sigmoid_derivative = prev.outputs.multiply(one - prev.outputs);
 
     // delta_next = (delta * prev.w.trans()) x (a * (1-a));
     delta = (delta * prev.weights.transpose()).multiply_inplace(sigmoid_derivative);
@@ -205,10 +205,10 @@ void NN::save(const char* path) const {
   file.write((const char*)(&layer_count), sizeof layer_count);
 
   for (const Layer& layer : layers) {
-    int activation_count = (int) layer.activation.cols();
+    int activation_count = (int) layer.outputs.cols();
 
     assert(
-      layer.activation.rows() == 1 &&
+      layer.outputs.rows() == 1 &&
       layer.biased.rows() == 1 &&
       activation_count == layer.biased.cols()
     );
@@ -244,7 +244,7 @@ void NN::load(const char* path) {
     l.biased = read_matrix(file);
     assert(l.biased.rows() == 1);
 
-    l.activation.init(1, l.biased.cols());
+    l.outputs.init(1, l.biased.cols());
     l.weights = read_matrix(file);
 
     layers.push_back(std::move(l));
@@ -254,8 +254,8 @@ void NN::load(const char* path) {
   for (size_t i = 0; i < layers.size() - 1; i++) {
     const Layer& curr = layers[i];
     const Layer& next = layers[i + 1];
-    assert(curr.weights.rows() == curr.activation.cols());
-    assert(curr.weights.cols() == next.activation.cols());
+    assert(curr.weights.rows() == curr.outputs.cols());
+    assert(curr.weights.cols() == next.outputs.cols());
   }
 
 }
